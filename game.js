@@ -126,6 +126,9 @@ let tiltTarget = 0;
 let tiltBaseline = null;
 let bestScore = 0;
 let loopActive = false;
+let dragActive = false;
+let dragX = 0;
+let activePointerId = null;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -147,8 +150,9 @@ function resize() {
   road.left = (width - road.width) / 2;
   road.laneWidth = road.width / laneCount;
 
-  player.width = road.laneWidth * 0.5;
-  player.height = road.laneWidth * 0.85;
+  const size = road.laneWidth * 0.5;
+  player.width = size;
+  player.height = size;
   player.y = height - player.height - Math.max(64, height * 0.12);
   player.x = road.left + road.laneWidth * (player.lane + 0.5) - player.width / 2;
 
@@ -169,7 +173,7 @@ function resetGame() {
   tiltValue = 0;
   tiltTarget = 0;
   tiltBaseline = null;
-  messageEl.textContent = "Swipe left/right or tilt to dodge the patterns.";
+  messageEl.textContent = "Touch and drag or tilt to dodge the patterns.";
   updateHud();
 }
 
@@ -186,7 +190,7 @@ function startGame() {
   resetGame();
   gameState = "running";
   startBtn.textContent = "Restart";
-  messageEl.textContent = "Go! Swipe or tilt to stay alive.";
+  messageEl.textContent = "Go! Drag or tilt to stay alive.";
   lastTime = performance.now();
   if (!loopActive) {
     loopActive = true;
@@ -203,7 +207,7 @@ function endGame() {
     localStorage.setItem(bestKey, bestScore.toString());
   }
   updateHud();
-  messageEl.textContent = "Crashed! Tap Start or swipe to run again.";
+  messageEl.textContent = "Crashed! Tap Start or drag to run again.";
 }
 
 function pickPattern() {
@@ -253,7 +257,8 @@ function updatePlayer(dt) {
   tiltValue = lerp(tiltValue, tiltTarget, clamp(dt * 6, 0, 1));
   const laneCenter = road.left + road.laneWidth * (player.lane + 0.5);
   const tiltOffset = tiltEnabled ? tiltValue * road.laneWidth * 0.5 : 0;
-  const targetX = laneCenter - player.width / 2 + tiltOffset;
+  const dragTargetX = dragX - player.width / 2;
+  const targetX = dragActive ? dragTargetX : laneCenter - player.width / 2 + tiltOffset;
   const minX = road.left + 6;
   const maxX = road.left + road.width - player.width - 6;
   const clamped = clamp(targetX, minX, maxX);
@@ -375,56 +380,116 @@ function loop(time) {
   requestAnimationFrame(loop);
 }
 
-function handleSwipe(startX, endX) {
-  const delta = endX - startX;
-  const threshold = Math.max(24, width * 0.06);
-  if (Math.abs(delta) < threshold) return;
-  if (delta < 0 && player.lane > 0) {
-    player.lane -= 1;
-  } else if (delta > 0 && player.lane < laneCount - 1) {
-    player.lane += 1;
-  }
-}
-
 function handleStartFromGesture() {
   if (gameState !== "running") {
     startGame();
   }
 }
 
-let touchStartX = 0;
+function setDragPosition(clientX) {
+  const minX = road.left + player.width / 2;
+  const maxX = road.left + road.width - player.width / 2;
+  dragX = clamp(clientX, minX, maxX);
+}
+
+function beginDrag(clientX, pointerId = null) {
+  dragActive = true;
+  activePointerId = pointerId;
+  setDragPosition(clientX);
+}
+
+function moveDrag(clientX) {
+  if (!dragActive) return;
+  setDragPosition(clientX);
+}
+
+function endDrag(pointerId = null) {
+  if (pointerId !== null && activePointerId !== null && pointerId !== activePointerId) {
+    return;
+  }
+  dragActive = false;
+  activePointerId = null;
+}
+
 const supportsPointer = "PointerEvent" in window;
 if (supportsPointer) {
   canvas.addEventListener("pointerdown", (event) => {
-    touchStartX = event.clientX;
+    if (activePointerId !== null) return;
+    if (canvas.setPointerCapture) {
+      canvas.setPointerCapture(event.pointerId);
+    }
+    beginDrag(event.clientX, event.pointerId);
+    handleStartFromGesture();
   });
 
-  canvas.addEventListener("pointerup", (event) => {
-    if (gameState !== "running") {
-      handleStartFromGesture();
-      return;
-    }
-    handleSwipe(touchStartX, event.clientX);
+  canvas.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== activePointerId) return;
+    moveDrag(event.clientX);
   });
+
+  const endHandler = (event) => {
+    endDrag(event.pointerId);
+  };
+  canvas.addEventListener("pointerup", endHandler);
+  canvas.addEventListener("pointercancel", endHandler);
+  canvas.addEventListener("lostpointercapture", endHandler);
+  canvas.addEventListener("pointerleave", endHandler);
 } else {
-  canvas.addEventListener("touchstart", (event) => {
-    touchStartX = event.touches[0].clientX;
-  });
-
-  canvas.addEventListener("touchend", (event) => {
-    if (gameState !== "running") {
+  canvas.addEventListener(
+    "touchstart",
+    (event) => {
+      if (event.touches.length === 0) return;
+      const touch = event.touches[0];
+      beginDrag(touch.clientX, touch.identifier);
       handleStartFromGesture();
-      return;
+      event.preventDefault();
+    },
+    { passive: false }
+  );
+
+  canvas.addEventListener(
+    "touchmove",
+    (event) => {
+      if (!dragActive) return;
+      const touch = Array.from(event.touches).find(
+        (item) => item.identifier === activePointerId
+      );
+      if (touch) {
+        moveDrag(touch.clientX);
+        event.preventDefault();
+      }
+    },
+    { passive: false }
+  );
+
+  const touchEndHandler = (event) => {
+    const ended = Array.from(event.changedTouches).find(
+      (item) => item.identifier === activePointerId
+    );
+    if (ended) {
+      endDrag(ended.identifier);
     }
-    const touchEndX = event.changedTouches[0].clientX;
-    handleSwipe(touchStartX, touchEndX);
-  });
+  };
+  canvas.addEventListener("touchend", touchEndHandler);
+  canvas.addEventListener("touchcancel", touchEndHandler);
+}
+
+function syncLaneFromPosition() {
+  const lane = Math.round((player.x + player.width / 2 - road.left) / road.laneWidth - 0.5);
+  player.lane = clamp(lane, 0, laneCount - 1);
+}
+
+function clearDrag() {
+  dragActive = false;
+  activePointerId = null;
 }
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft") {
+    clearDrag();
     player.lane = Math.max(0, player.lane - 1);
   } else if (event.key === "ArrowRight") {
+    clearDrag();
     player.lane = Math.min(laneCount - 1, player.lane + 1);
   } else if (event.key === " " || event.key === "Enter") {
     handleStartFromGesture();
@@ -439,7 +504,7 @@ function enableTiltSupport() {
   tiltEnabled = true;
   tiltBaseline = null;
   tiltBtn.classList.add("hidden");
-  messageEl.textContent = "Tilt active! Swipe to shift lanes fast.";
+  messageEl.textContent = "Tilt active! Drag to fine-tune.";
 }
 
 if (typeof DeviceOrientationEvent !== "undefined") {
@@ -451,10 +516,10 @@ if (typeof DeviceOrientationEvent !== "undefined") {
         if (response === "granted") {
           enableTiltSupport();
         } else {
-          messageEl.textContent = "Tilt permission denied. Swipe controls only.";
+          messageEl.textContent = "Tilt permission denied. Drag controls only.";
         }
       } catch (error) {
-        messageEl.textContent = "Tilt unavailable. Swipe controls only.";
+        messageEl.textContent = "Tilt unavailable. Drag controls only.";
       }
     });
   } else {
@@ -474,6 +539,11 @@ if (typeof DeviceOrientationEvent !== "undefined") {
 
 window.addEventListener("resize", () => {
   resize();
+  if (dragActive) {
+    setDragPosition(dragX);
+  } else {
+    syncLaneFromPosition();
+  }
   draw();
 });
 
