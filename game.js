@@ -157,6 +157,18 @@ let loopActive = false;
 let dragActive = false;
 let dragX = 0;
 let activePointerId = null;
+let slowMoTime = 0;
+let shakeTime = 0;
+let shakeDuration = 0;
+let shakeStrength = 0;
+let juiceCooldown = 0;
+
+const audioState = {
+  ctx: null,
+  master: null,
+  whooshGain: null,
+  whooshFilter: null,
+};
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -202,6 +214,120 @@ function getSpeedMultiplier(seconds) {
   return lerp(midMultiplier, maxMultiplier, easeInCubic(t));
 }
 
+function decayEffects(deltaMs) {
+  if (slowMoTime > 0) {
+    slowMoTime = Math.max(0, slowMoTime - deltaMs);
+  }
+  if (shakeTime > 0) {
+    shakeTime = Math.max(0, shakeTime - deltaMs);
+  }
+  if (juiceCooldown > 0) {
+    juiceCooldown = Math.max(0, juiceCooldown - deltaMs);
+  }
+}
+
+function triggerShake(amount, duration) {
+  if (amount > shakeStrength || shakeTime <= 0) {
+    shakeStrength = amount;
+  }
+  shakeDuration = Math.max(shakeDuration, duration);
+  shakeTime = Math.max(shakeTime, duration);
+}
+
+function triggerSlowMo(duration) {
+  slowMoTime = Math.max(slowMoTime, duration);
+}
+
+function triggerNearMiss() {
+  if (juiceCooldown > 0) return;
+  triggerShake(5, 140);
+  triggerSlowMo(170);
+  juiceCooldown = 160;
+}
+
+function triggerSqueeze() {
+  if (juiceCooldown > 0) return;
+  triggerShake(4, 180);
+  triggerSlowMo(220);
+  juiceCooldown = 190;
+}
+
+function initAudio() {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return;
+  if (audioState.ctx) {
+    if (audioState.ctx.state === "suspended") {
+      audioState.ctx.resume();
+    }
+    return;
+  }
+
+  const ctx = new AudioContextCtor();
+  const master = ctx.createGain();
+  master.gain.value = 0.25;
+  master.connect(ctx.destination);
+
+  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const whooshSource = ctx.createBufferSource();
+  whooshSource.buffer = noiseBuffer;
+  whooshSource.loop = true;
+
+  const whooshFilter = ctx.createBiquadFilter();
+  whooshFilter.type = "bandpass";
+  whooshFilter.frequency.value = 360;
+  whooshFilter.Q.value = 0.7;
+
+  const whooshGain = ctx.createGain();
+  whooshGain.gain.value = 0.0;
+
+  whooshSource.connect(whooshFilter);
+  whooshFilter.connect(whooshGain);
+  whooshGain.connect(master);
+  whooshSource.start();
+
+  audioState.ctx = ctx;
+  audioState.master = master;
+  audioState.whooshGain = whooshGain;
+  audioState.whooshFilter = whooshFilter;
+}
+
+function updateAudio(multiplier, running) {
+  if (!audioState.ctx) return;
+  const ctx = audioState.ctx;
+  const targetGain = running ? 0.015 + multiplier * 0.02 : 0;
+  const targetFreq = 260 + multiplier * 420;
+  audioState.whooshGain.gain.setTargetAtTime(
+    targetGain,
+    ctx.currentTime,
+    0.12
+  );
+  audioState.whooshFilter.frequency.setTargetAtTime(
+    targetFreq,
+    ctx.currentTime,
+    0.15
+  );
+}
+
+function playCrashPop() {
+  if (!audioState.ctx) return;
+  const ctx = audioState.ctx;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(220, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.12);
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+  osc.connect(gain).connect(audioState.master);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.22);
+}
+
 function resize() {
   width = window.innerWidth;
   height = window.innerHeight;
@@ -241,6 +367,11 @@ function resetGame() {
   tiltBaseline = null;
   dragActive = false;
   activePointerId = null;
+  slowMoTime = 0;
+  shakeTime = 0;
+  shakeDuration = 0;
+  shakeStrength = 0;
+  juiceCooldown = 0;
   messageEl.textContent = "Touch and drag or tilt to dodge the patterns.";
   updateHud();
 }
@@ -256,6 +387,7 @@ function updateHud() {
 function startGame() {
   if (gameState === "running") return;
   resetGame();
+  initAudio();
   gameState = "running";
   startBtn.textContent = "Restart";
   messageEl.textContent = "Go! Drag or tilt to stay alive.";
@@ -269,6 +401,8 @@ function startGame() {
 function endGame() {
   if (gameState !== "running") return;
   gameState = "crashed";
+  triggerShake(10, 280);
+  playCrashPop();
   const score = Math.floor(distance / 10);
   if (score > bestScore) {
     bestScore = score;
@@ -312,6 +446,15 @@ function pickPattern() {
 }
 
 function spawnRow(row) {
+  const openLaneCount = laneCount - row.lanes.length;
+  let rowToken = null;
+  if (openLaneCount === 1) {
+    const openLane = Array.from({ length: laneCount }, (_, index) => index).find(
+      (lane) => !row.lanes.includes(lane)
+    );
+    rowToken = { openLane, triggered: false };
+  }
+
   row.lanes.forEach((lane) => {
     const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
     const size = road.laneWidth * type.h;
@@ -321,6 +464,8 @@ function spawnRow(row) {
       type,
       wobble: Math.random() * Math.PI * 2,
       wobbleSpeed: 0.8 + Math.random() * 0.6,
+      rowToken,
+      nearMissed: false,
     });
   });
 }
@@ -356,11 +501,14 @@ function updatePlayer(dt) {
 }
 
 function update(deltaMs) {
-  elapsedMs += deltaMs;
+  const timeScale = slowMoTime > 0 ? 0.65 : 1;
+  decayEffects(deltaMs);
+  const scaledDelta = deltaMs * timeScale;
+  elapsedMs += scaledDelta;
   const seconds = elapsedMs / 1000;
   const multiplier = getSpeedMultiplier(seconds);
   speed = baseSpeed * multiplier;
-  const dt = deltaMs / 1000;
+  const dt = scaledDelta / 1000;
   distance += speed * dt;
   spawnDistance -= speed * dt;
 
@@ -399,6 +547,25 @@ function update(deltaMs) {
       width: rect.width * 0.84,
       height: rect.height * 0.84,
     };
+    const verticalOverlap =
+      obstacleHitbox.y < hitbox.y + hitbox.height &&
+      obstacleHitbox.y + obstacleHitbox.height > hitbox.y;
+    if (obs.rowToken && !obs.rowToken.triggered && verticalOverlap) {
+      if (player.lane === obs.rowToken.openLane) {
+        triggerSqueeze();
+        obs.rowToken.triggered = true;
+      }
+    }
+    if (!obs.nearMissed && verticalOverlap) {
+      const gapLeft = hitbox.x - (obstacleHitbox.x + obstacleHitbox.width);
+      const gapRight = obstacleHitbox.x - (hitbox.x + hitbox.width);
+      const horizontalGap = Math.max(gapLeft, gapRight);
+      const nearMargin = road.laneWidth * 0.08;
+      if (horizontalGap > 0 && horizontalGap < nearMargin) {
+        triggerNearMiss();
+        obs.nearMissed = true;
+      }
+    }
     if (
       obstacleHitbox.x < hitbox.x + hitbox.width &&
       obstacleHitbox.x + obstacleHitbox.width > hitbox.x &&
@@ -462,11 +629,22 @@ function drawPlayer() {
   );
 }
 
+function applyCameraShake() {
+  if (shakeTime <= 0 || shakeDuration <= 0) return;
+  const intensity = shakeStrength * (shakeTime / shakeDuration);
+  const offsetX = (Math.random() * 2 - 1) * intensity;
+  const offsetY = (Math.random() * 2 - 1) * intensity;
+  ctx.translate(offsetX, offsetY);
+}
+
 function draw() {
   ctx.clearRect(0, 0, width, height);
+  ctx.save();
+  applyCameraShake();
   drawBackground();
   drawObstacles();
   drawPlayer();
+  ctx.restore();
 }
 
 function loop(time) {
@@ -474,7 +652,10 @@ function loop(time) {
   lastTime = time;
   if (gameState === "running") {
     update(deltaMs);
+  } else {
+    decayEffects(deltaMs);
   }
+  updateAudio(gameState === "running" ? speed / baseSpeed : 0, gameState === "running");
   draw();
   requestAnimationFrame(loop);
 }
