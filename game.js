@@ -17,6 +17,7 @@ const baseSpeed = 420;
 const maxMultiplier = 2.45;
 const minGap = 160;
 const baseMinSpawnTime = 0.34;
+const slowMoScale = 0.85;
 const speedPhaseEarly = 20;
 const speedPhaseMid = 60;
 const speedPhaseLate = 30;
@@ -240,16 +241,16 @@ function triggerSlowMo(duration) {
 
 function triggerNearMiss() {
   if (juiceCooldown > 0) return;
-  triggerShake(5, 140);
-  triggerSlowMo(170);
-  juiceCooldown = 160;
+  triggerShake(1.6, 60);
+  triggerSlowMo(80);
+  juiceCooldown = 120;
 }
 
 function triggerSqueeze() {
   if (juiceCooldown > 0) return;
-  triggerShake(4, 180);
-  triggerSlowMo(220);
-  juiceCooldown = 190;
+  triggerShake(2, 80);
+  triggerSlowMo(90);
+  juiceCooldown = 140;
 }
 
 function initAudio() {
@@ -401,7 +402,7 @@ function startGame() {
 function endGame() {
   if (gameState !== "running") return;
   gameState = "crashed";
-  triggerShake(10, 280);
+  triggerShake(2.4, 90);
   playCrashPop();
   const score = Math.floor(distance / 10);
   if (score > bestScore) {
@@ -501,7 +502,7 @@ function updatePlayer(dt) {
 }
 
 function update(deltaMs) {
-  const timeScale = slowMoTime > 0 ? 0.65 : 1;
+  const timeScale = slowMoTime > 0 ? slowMoScale : 1;
   decayEffects(deltaMs);
   const scaledDelta = deltaMs * timeScale;
   elapsedMs += scaledDelta;
