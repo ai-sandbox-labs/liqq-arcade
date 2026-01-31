@@ -14,10 +14,14 @@ let backgroundGradient = null;
 
 const laneCount = 3;
 const baseSpeed = 420;
-const maxMultiplier = 2.6;
-const difficultyRamp = 0.000045;
+const maxMultiplier = 2.45;
 const minGap = 160;
-const minSpawnTime = 0.38;
+const baseMinSpawnTime = 0.34;
+const speedPhaseEarly = 20;
+const speedPhaseMid = 60;
+const speedPhaseLate = 30;
+const earlyMultiplier = 1.45;
+const midMultiplier = 1.85;
 const bestKey = "seekerRunnerBest";
 
 const road = {
@@ -43,12 +47,12 @@ const obstacleTypes = [
 
 const patterns = [
   {
-    name: "slalom",
+    name: "zigzag",
     rows: [
-      { lanes: [0], gap: 240 },
-      { lanes: [1], gap: 200 },
-      { lanes: [2], gap: 240 },
-      { lanes: [1], gap: 200 },
+      { lanes: [0], gap: 230 },
+      { lanes: [2], gap: 230 },
+      { lanes: [0], gap: 230 },
+      { lanes: [2], gap: 230 },
     ],
   },
   {
@@ -86,7 +90,7 @@ const patterns = [
   {
     name: "steps",
     rows: [
-      { lanes: [0], gap: 200 },
+      { lanes: [0], gap: 205 },
       { lanes: [0, 1], gap: 210 },
       { lanes: [1], gap: 210 },
       { lanes: [1, 2], gap: 210 },
@@ -96,17 +100,40 @@ const patterns = [
   {
     name: "center-line",
     rows: [
-      { lanes: [1], gap: 190 },
-      { lanes: [1], gap: 190 },
+      { lanes: [1], gap: 200 },
+      { lanes: [1], gap: 200 },
       { lanes: [0, 2], gap: 260 },
     ],
   },
   {
-    name: "swing",
+    name: "quick-swap",
     rows: [
-      { lanes: [0, 2], gap: 260 },
-      { lanes: [2], gap: 200 },
-      { lanes: [0], gap: 200 },
+      { lanes: [0, 2], gap: 230 },
+      { lanes: [1], gap: 190 },
+      { lanes: [0, 2], gap: 230 },
+    ],
+  },
+  {
+    name: "tunnel-left",
+    repeat: [4, 6],
+    rows: [{ lanes: [1, 2], gap: 210 }],
+  },
+  {
+    name: "tunnel-center",
+    repeat: [4, 6],
+    rows: [{ lanes: [0, 2], gap: 210 }],
+  },
+  {
+    name: "tunnel-right",
+    repeat: [4, 6],
+    rows: [{ lanes: [0, 1], gap: 210 }],
+  },
+  {
+    name: "staggered-wall",
+    rows: [
+      { lanes: [0, 1], gap: 220 },
+      { lanes: [1, 2], gap: 220 },
+      { lanes: [0, 1], gap: 220 },
     ],
   },
 ];
@@ -119,6 +146,7 @@ let speed = baseSpeed;
 let obstacles = [];
 let patternQueue = [];
 let spawnDistance = 0;
+let patternDeck = [];
 let lastPatternIndex = -1;
 let tiltEnabled = false;
 let tiltValue = 0;
@@ -136,6 +164,42 @@ function clamp(value, min, max) {
 
 function lerp(current, target, rate) {
   return current + (target - current) * rate;
+}
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function easeInOutQuad(t) {
+  if (t < 0.5) {
+    return 2 * t * t;
+  }
+  return 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+function easeInCubic(t) {
+  return t * t * t;
+}
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
+
+function getSpeedMultiplier(seconds) {
+  if (seconds <= speedPhaseEarly) {
+    const t = seconds / speedPhaseEarly;
+    return lerp(1, earlyMultiplier, easeOutCubic(t));
+  }
+  if (seconds <= speedPhaseMid) {
+    const t = (seconds - speedPhaseEarly) / (speedPhaseMid - speedPhaseEarly);
+    return lerp(earlyMultiplier, midMultiplier, easeInOutQuad(t));
+  }
+  const lateElapsed = seconds - speedPhaseMid;
+  const t = clamp(lateElapsed / speedPhaseLate, 0, 1);
+  return lerp(midMultiplier, maxMultiplier, easeInCubic(t));
 }
 
 function resize() {
@@ -168,11 +232,15 @@ function resetGame() {
   speed = baseSpeed;
   obstacles = [];
   patternQueue = [];
+  patternDeck = [];
   spawnDistance = 420;
+  lastPatternIndex = -1;
   player.lane = 1;
   tiltValue = 0;
   tiltTarget = 0;
   tiltBaseline = null;
+  dragActive = false;
+  activePointerId = null;
   messageEl.textContent = "Touch and drag or tilt to dodge the patterns.";
   updateHud();
 }
@@ -210,13 +278,35 @@ function endGame() {
   messageEl.textContent = "Crashed! Tap Start or drag to run again.";
 }
 
-function pickPattern() {
-  let index = Math.floor(Math.random() * patterns.length);
-  if (patterns.length > 1) {
-    while (index === lastPatternIndex) {
-      index = Math.floor(Math.random() * patterns.length);
-    }
+function refillPatternDeck() {
+  patternDeck = patterns.map((_, index) => index);
+  shuffle(patternDeck);
+  if (patternDeck.length > 1 && patternDeck[0] === lastPatternIndex) {
+    [patternDeck[0], patternDeck[1]] = [patternDeck[1], patternDeck[0]];
   }
+}
+
+function buildPatternRows(pattern) {
+  const repeat = pattern.repeat
+    ? Math.floor(
+        pattern.repeat[0] +
+          Math.random() * (pattern.repeat[1] - pattern.repeat[0] + 1)
+      )
+    : 1;
+  const rows = [];
+  for (let i = 0; i < repeat; i += 1) {
+    pattern.rows.forEach((row) => {
+      rows.push({ ...row });
+    });
+  }
+  return rows;
+}
+
+function pickPattern() {
+  if (patternDeck.length === 0) {
+    refillPatternDeck();
+  }
+  const index = patternDeck.shift();
   lastPatternIndex = index;
   return patterns[index];
 }
@@ -267,8 +357,9 @@ function updatePlayer(dt) {
 
 function update(deltaMs) {
   elapsedMs += deltaMs;
-  const difficulty = 1 + Math.min(maxMultiplier - 1, elapsedMs * difficultyRamp);
-  speed = baseSpeed * difficulty;
+  const seconds = elapsedMs / 1000;
+  const multiplier = getSpeedMultiplier(seconds);
+  speed = baseSpeed * multiplier;
   const dt = deltaMs / 1000;
   distance += speed * dt;
   spawnDistance -= speed * dt;
@@ -279,32 +370,40 @@ function update(deltaMs) {
   while (spawnDistance <= 0) {
     if (patternQueue.length === 0) {
       const pattern = pickPattern();
-      patternQueue = pattern.rows.map((row) => ({ ...row }));
+      patternQueue = buildPatternRows(pattern);
     }
     const row = patternQueue.shift();
     spawnRow(row);
-    const gapScale = clamp(1 - (difficulty - 1) * 0.18, 0.55, 1);
+    const gapScale = clamp(1 - (multiplier - 1) * 0.12, 0.7, 1);
     const openLaneCount = laneCount - row.lanes.length;
     const densityBoost = openLaneCount === 1 ? 1.2 : 1;
-    const gapTarget = row.gap * gapScale * densityBoost;
+    const spacingBoost = 1 + (multiplier - 1) * 0.08;
+    const gapTarget = row.gap * gapScale * densityBoost * spacingBoost;
+    const minSpawnTime = baseMinSpawnTime + (multiplier - 1) * 0.05;
     const minDistanceByTime = speed * minSpawnTime;
     spawnDistance += Math.max(minGap, gapTarget, minDistanceByTime);
   }
 
   const hitbox = {
-    x: player.x + player.width * 0.18,
-    y: player.y + player.height * 0.18,
-    width: player.width * 0.64,
-    height: player.height * 0.72,
+    x: player.x + player.width * 0.22,
+    y: player.y + player.height * 0.2,
+    width: player.width * 0.56,
+    height: player.height * 0.6,
   };
 
   for (const obs of obstacles) {
     const rect = getObstacleRect(obs);
+    const obstacleHitbox = {
+      x: rect.x + rect.width * 0.08,
+      y: rect.y + rect.height * 0.08,
+      width: rect.width * 0.84,
+      height: rect.height * 0.84,
+    };
     if (
-      rect.x < hitbox.x + hitbox.width &&
-      rect.x + rect.width > hitbox.x &&
-      rect.y < hitbox.y + hitbox.height &&
-      rect.y + rect.height > hitbox.y
+      obstacleHitbox.x < hitbox.x + hitbox.width &&
+      obstacleHitbox.x + obstacleHitbox.width > hitbox.x &&
+      obstacleHitbox.y < hitbox.y + hitbox.height &&
+      obstacleHitbox.y + obstacleHitbox.height > hitbox.y
     ) {
       endGame();
       break;
