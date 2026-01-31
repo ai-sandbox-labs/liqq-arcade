@@ -4,16 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Seeker Runner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div id="ui">
       <div class="stats">
-        <span id="score">0</span>
-        <span id="speed">1.0x</span>
+        <div class="stat">
+          <span class="label">Distance</span>
+          <span id="score">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Best</span>
+          <span id="best">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Speed</span>
+          <span id="speed">1.0x</span>
+        </div>
       </div>
-      <button id="start-btn">Start</button>
-      <button id="tilt-btn" class="hidden">Enable Tilt</button>
+      <div class="controls">
+        <button id="start-btn">Start</button>
+        <button id="tilt-btn" class="hidden">Enable Tilt</button>
+      </div>
       <div id="message">Swipe left/right or tilt to dodge obstacles.</div>
     </div>
     <canvas id="game"></canvas>

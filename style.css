@@ -1,6 +1,6 @@
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
 }
 
 * {
@@ -13,6 +13,7 @@ body {
   background: #0b0b12;
   overflow: hidden;
   height: 100vh;
+  touch-action: none;
 }
 
 #game {
@@ -20,6 +21,7 @@ body {
   width: 100vw;
   height: 100vh;
   background: linear-gradient(180deg, #10122a 0%, #05060d 100%);
+  touch-action: none;
 }
 
 #ui {
@@ -27,7 +29,7 @@ body {
   top: 0;
   left: 0;
   width: 100%;
-  padding: 16px;
+  padding: calc(16px + env(safe-area-inset-top)) 16px 16px;
   color: #f6f7ff;
   z-index: 2;
   pointer-events: none;
@@ -35,26 +37,49 @@ body {
 
 .stats {
   display: flex;
-  gap: 16px;
-  font-weight: 600;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+#ui .stat {
+  display: grid;
+  gap: 2px;
+  min-width: 72px;
+}
+
+#ui .label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+#ui #score,
+#ui #best,
+#ui #speed {
   font-size: 18px;
+  font-weight: 700;
+}
+
+.controls {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
 }
 
 #start-btn,
 #tilt-btn {
-  margin-top: 12px;
   padding: 10px 16px;
   border: none;
   border-radius: 999px;
   font-weight: 600;
   color: #0b0b12;
   background: #f9c74f;
-  pointer-events: auto;
 }
 
 #tilt-btn {
   background: #90be6d;
-  margin-left: 8px;
 }
 
 #message {
