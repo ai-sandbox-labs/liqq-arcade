@@ -16,7 +16,8 @@ const laneCount = 3;
 const baseSpeed = 420;
 const maxMultiplier = 2.6;
 const difficultyRamp = 0.000045;
-const minGap = 140;
+const minGap = 160;
+const minSpawnTime = 0.38;
 const bestKey = "seekerRunnerBest";
 
 const road = {
@@ -35,9 +36,9 @@ const player = {
 };
 
 const obstacleTypes = [
-  { color: "#f3722c", w: 0.78, h: 0.9 },
-  { color: "#577590", w: 0.7, h: 1.05 },
-  { color: "#4d908e", w: 0.62, h: 0.7 },
+  { color: "#f3722c", w: 0.66, h: 0.9 },
+  { color: "#577590", w: 0.6, h: 1.02 },
+  { color: "#4d908e", w: 0.56, h: 0.72 },
 ];
 
 const patterns = [
@@ -146,8 +147,8 @@ function resize() {
   road.left = (width - road.width) / 2;
   road.laneWidth = road.width / laneCount;
 
-  player.width = road.laneWidth * 0.55;
-  player.height = road.laneWidth * 0.9;
+  player.width = road.laneWidth * 0.5;
+  player.height = road.laneWidth * 0.85;
   player.y = height - player.height - Math.max(64, height * 0.12);
   player.x = road.left + road.laneWidth * (player.lane + 0.5) - player.width / 2;
 
@@ -168,7 +169,7 @@ function resetGame() {
   tiltValue = 0;
   tiltTarget = 0;
   tiltBaseline = null;
-  messageEl.textContent = "Swipe left/right or tilt to dodge obstacles.";
+  messageEl.textContent = "Swipe left/right or tilt to dodge the patterns.";
   updateHud();
 }
 
@@ -243,7 +244,7 @@ function getObstacleRect(obs) {
   const width = road.laneWidth * obs.type.w;
   const height = road.laneWidth * obs.type.h;
   const laneCenter = road.left + road.laneWidth * (obs.lane + 0.5);
-  const wobbleOffset = Math.sin(obs.wobble) * road.laneWidth * 0.04;
+  const wobbleOffset = Math.sin(obs.wobble) * road.laneWidth * 0.02;
   const x = laneCenter - width / 2 + wobbleOffset;
   return { x, y: obs.y, width, height };
 }
@@ -278,7 +279,11 @@ function update(deltaMs) {
     const row = patternQueue.shift();
     spawnRow(row);
     const gapScale = clamp(1 - (difficulty - 1) * 0.18, 0.55, 1);
-    spawnDistance += Math.max(minGap, row.gap * gapScale);
+    const openLaneCount = laneCount - row.lanes.length;
+    const densityBoost = openLaneCount === 1 ? 1.2 : 1;
+    const gapTarget = row.gap * gapScale * densityBoost;
+    const minDistanceByTime = speed * minSpawnTime;
+    spawnDistance += Math.max(minGap, gapTarget, minDistanceByTime);
   }
 
   const hitbox = {
