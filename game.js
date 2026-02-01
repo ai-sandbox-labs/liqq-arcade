@@ -563,20 +563,21 @@ function update(deltaMs) {
     spawnDistance += Math.max(minGap, gapTarget, minDistanceByTime);
   }
 
+  // Fairness: slightly forgiving hitbox so deaths feel deserved.
   const hitbox = {
-    x: player.x + player.width * 0.22,
-    y: player.y + player.height * 0.2,
-    width: player.width * 0.56,
-    height: player.height * 0.6,
+    x: player.x + player.width * 0.24,
+    y: player.y + player.height * 0.22,
+    width: player.width * 0.52,
+    height: player.height * 0.56,
   };
 
   for (const obs of obstacles) {
     const rect = getObstacleRect(obs);
     const obstacleHitbox = {
-      x: rect.x + rect.width * 0.08,
-      y: rect.y + rect.height * 0.08,
-      width: rect.width * 0.84,
-      height: rect.height * 0.84,
+      x: rect.x + rect.width * 0.1,
+      y: rect.y + rect.height * 0.1,
+      width: rect.width * 0.8,
+      height: rect.height * 0.8,
     };
     const verticalOverlap =
       obstacleHitbox.y < hitbox.y + hitbox.height &&
@@ -591,7 +592,7 @@ function update(deltaMs) {
       const gapLeft = hitbox.x - (obstacleHitbox.x + obstacleHitbox.width);
       const gapRight = obstacleHitbox.x - (hitbox.x + hitbox.width);
       const horizontalGap = Math.max(gapLeft, gapRight);
-      const nearMargin = road.laneWidth * 0.08;
+      const nearMargin = road.laneWidth * 0.075;
       if (horizontalGap > 0 && horizontalGap < nearMargin) {
         triggerNearMiss();
         obs.nearMissed = true;
