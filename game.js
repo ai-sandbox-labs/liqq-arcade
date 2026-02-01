@@ -373,7 +373,7 @@ function resetGame() {
   shakeDuration = 0;
   shakeStrength = 0;
   juiceCooldown = 0;
-  messageEl.textContent = "Touch and drag or tilt to dodge the patterns.";
+  messageEl.textContent = "Tap anywhere to start. Drag or tilt to dodge.";
   updateHud();
 }
 
@@ -399,6 +399,7 @@ function startGame() {
   }
 }
 
+
 function endGame() {
   if (gameState !== "running") return;
   gameState = "crashed";
@@ -410,7 +411,7 @@ function endGame() {
     localStorage.setItem(bestKey, bestScore.toString());
   }
   updateHud();
-  messageEl.textContent = "Crashed! Tap Start or drag to run again.";
+  messageEl.textContent = "Crashed! Tap anywhere to run again.";
 }
 
 function refillPatternDeck() {
@@ -667,6 +668,19 @@ function handleStartFromGesture() {
   }
 }
 
+function shouldIgnoreGlobalStartTarget(target) {
+  if (!target) return false;
+  if (target === startBtn || target === tiltBtn) return false;
+  // Don't steal focus from any buttons/inputs/links.
+  return Boolean(target.closest && target.closest("button, a, input, textarea, select"));
+}
+
+function handleGlobalStart(event) {
+  if (gameState === "running") return;
+  if (shouldIgnoreGlobalStartTarget(event?.target)) return;
+  startGame();
+}
+
 function setDragPosition(clientX) {
   const minX = road.left + player.width / 2;
   const maxX = road.left + road.width - player.width / 2;
@@ -780,6 +794,19 @@ window.addEventListener("keydown", (event) => {
 startBtn.addEventListener("click", () => {
   startGame();
 });
+
+// Tap anywhere (including UI overlay) to start/restart when not running.
+document.addEventListener("pointerdown", handleGlobalStart, { passive: true });
+document.addEventListener(
+  "touchstart",
+  (event) => {
+    // Fallback for older browsers without pointer events.
+    if (!("PointerEvent" in window)) {
+      handleGlobalStart(event);
+    }
+  },
+  { passive: true }
+);
 
 function enableTiltSupport() {
   tiltEnabled = true;
