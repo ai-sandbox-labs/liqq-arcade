@@ -139,6 +139,10 @@ const patterns = [
   },
 ];
 
+// Deterministic intro: keep the first few patterns the same every run.
+// This makes the early game learnable and fair, then we can ramp into variety.
+const introPatternNames = ["center-line", "gates", "zigzag"];
+
 let gameState = "idle";
 let lastTime = 0;
 let elapsedMs = 0;
@@ -146,6 +150,7 @@ let distance = 0;
 let speed = baseSpeed;
 let obstacles = [];
 let patternQueue = [];
+let introQueue = [];
 let spawnDistance = 0;
 let patternDeck = [];
 let lastPatternIndex = -1;
@@ -359,6 +364,7 @@ function resetGame() {
   speed = baseSpeed;
   obstacles = [];
   patternQueue = [];
+  introQueue = buildIntroQueue();
   patternDeck = [];
   spawnDistance = 420;
   lastPatternIndex = -1;
@@ -414,6 +420,20 @@ function endGame() {
   messageEl.textContent = "Crashed! Tap anywhere to run again.";
 }
 
+function findPatternByName(name) {
+  return patterns.find((pattern) => pattern.name === name);
+}
+
+function buildIntroQueue() {
+  const queue = [];
+  introPatternNames.forEach((name) => {
+    const pattern = findPatternByName(name);
+    if (!pattern) return;
+    queue.push(...buildPatternRows(pattern, true));
+  });
+  return queue;
+}
+
 function refillPatternDeck() {
   patternDeck = patterns.map((_, index) => index);
   shuffle(patternDeck);
@@ -422,17 +442,19 @@ function refillPatternDeck() {
   }
 }
 
-function buildPatternRows(pattern) {
+function buildPatternRows(pattern, deterministic = false) {
   const repeat = pattern.repeat
-    ? Math.floor(
-        pattern.repeat[0] +
-          Math.random() * (pattern.repeat[1] - pattern.repeat[0] + 1)
-      )
+    ? deterministic
+      ? pattern.repeat[0]
+      : Math.floor(
+          pattern.repeat[0] +
+            Math.random() * (pattern.repeat[1] - pattern.repeat[0] + 1)
+        )
     : 1;
   const rows = [];
   for (let i = 0; i < repeat; i += 1) {
     pattern.rows.forEach((row) => {
-      rows.push({ ...row });
+      rows.push({ ...row, deterministic });
     });
   }
   return rows;
@@ -458,14 +480,16 @@ function spawnRow(row) {
   }
 
   row.lanes.forEach((lane) => {
-    const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+    const type = row.deterministic
+      ? obstacleTypes[0]
+      : obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
     const size = road.laneWidth * type.h;
     obstacles.push({
       lane,
       y: -size - 40,
       type,
-      wobble: Math.random() * Math.PI * 2,
-      wobbleSpeed: 0.8 + Math.random() * 0.6,
+      wobble: row.deterministic ? 0 : Math.random() * Math.PI * 2,
+      wobbleSpeed: row.deterministic ? 1.0 : 0.8 + Math.random() * 0.6,
       rowToken,
       nearMissed: false,
     });
@@ -519,8 +543,13 @@ function update(deltaMs) {
 
   while (spawnDistance <= 0) {
     if (patternQueue.length === 0) {
-      const pattern = pickPattern();
-      patternQueue = buildPatternRows(pattern);
+      if (introQueue.length > 0) {
+        patternQueue = introQueue;
+        introQueue = [];
+      } else {
+        const pattern = pickPattern();
+        patternQueue = buildPatternRows(pattern, false);
+      }
     }
     const row = patternQueue.shift();
     spawnRow(row);
