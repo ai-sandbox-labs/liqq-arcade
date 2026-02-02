@@ -380,7 +380,7 @@ function resetGame() {
   shakeDuration = 0;
   shakeStrength = 0;
   juiceCooldown = 0;
-  messageEl.textContent = "Tap anywhere to start. Drag or tilt to dodge.";
+  messageEl.textContent = "Tap anywhere to start. Drag to dodge.";
   updateHud();
 }
 
@@ -398,7 +398,7 @@ function startGame() {
   initAudio();
   gameState = "running";
   startBtn.textContent = "Restart";
-  messageEl.textContent = "Go! Drag or tilt to stay alive.";
+  messageEl.textContent = "Go! Drag to stay alive.";
   lastTime = performance.now();
   if (!loopActive) {
     loopActive = true;

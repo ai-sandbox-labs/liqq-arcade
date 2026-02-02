@@ -68,18 +68,13 @@ body {
   pointer-events: auto;
 }
 
-#start-btn,
-#tilt-btn {
+#start-btn {
   padding: 10px 16px;
   border: none;
   border-radius: 999px;
   font-weight: 600;
   color: #0b0b12;
   background: #f9c74f;
-}
-
-#tilt-btn {
-  background: #90be6d;
 }
 
 #message {
