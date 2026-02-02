@@ -91,3 +91,16 @@ body {
 .hidden {
   display: none;
 }
+
+/* MVP: vertical-first */
+#rotate {
+  margin-top: 10px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+@media (orientation: landscape) {
+  #rotate {
+    display: block;
+  }
+}
