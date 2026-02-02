@@ -4,7 +4,8 @@ const scoreEl = document.getElementById("score");
 const bestEl = document.getElementById("best");
 const speedEl = document.getElementById("speed");
 const startBtn = document.getElementById("start-btn");
-const tiltBtn = document.getElementById("tilt-btn");
+// Tilt is intentionally disabled for MVP (vertical + drag-only).
+const tiltBtn = null;
 const messageEl = document.getElementById("message");
 
 let width = 0;
@@ -700,7 +701,8 @@ function handleStartFromGesture() {
 
 function shouldIgnoreGlobalStartTarget(target) {
   if (!target) return false;
-  if (target === startBtn || target === tiltBtn) return false;
+  if (target === startBtn) return false;
+  if (tiltBtn && target === tiltBtn) return false;
   // Don't steal focus from any buttons/inputs/links.
   return Boolean(target.closest && target.closest("button, a, input, textarea, select"));
 }
@@ -838,42 +840,7 @@ document.addEventListener(
   { passive: true }
 );
 
-function enableTiltSupport() {
-  tiltEnabled = true;
-  tiltBaseline = null;
-  tiltBtn.classList.add("hidden");
-  messageEl.textContent = "Tilt active! Drag to fine-tune.";
-}
-
-if (typeof DeviceOrientationEvent !== "undefined") {
-  if (typeof DeviceOrientationEvent.requestPermission === "function") {
-    tiltBtn.classList.remove("hidden");
-    tiltBtn.addEventListener("click", async () => {
-      try {
-        const response = await DeviceOrientationEvent.requestPermission();
-        if (response === "granted") {
-          enableTiltSupport();
-        } else {
-          messageEl.textContent = "Tilt permission denied. Drag controls only.";
-        }
-      } catch (error) {
-        messageEl.textContent = "Tilt unavailable. Drag controls only.";
-      }
-    });
-  } else {
-    enableTiltSupport();
-  }
-
-  window.addEventListener("deviceorientation", (event) => {
-    if (!tiltEnabled) return;
-    const gamma = event.gamma ?? 0;
-    if (tiltBaseline === null) {
-      tiltBaseline = gamma;
-    }
-    const adjusted = gamma - tiltBaseline;
-    tiltTarget = clamp(adjusted / 28, -1, 1);
-  });
-}
+// Tilt support intentionally removed for MVP (vertical + drag-only).
 
 window.addEventListener("resize", () => {
   resize();
